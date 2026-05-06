@@ -26,7 +26,7 @@ fresh, location-specific results for **any city in the world**, every time.
             app.py                # Streamlit web interface with PDF export
         cli.py                    # Command-line interface
         requirements.txt
-        .env.example
+        .env
         .gitignore
         README.md
 
@@ -115,7 +115,7 @@ The profile resets when the conversation is cleared.
 
 ### Step 5 — Add your API key
 
-    cp .env.example .env
+    Create a .env file
 
 Then open .env and paste your key:
 
