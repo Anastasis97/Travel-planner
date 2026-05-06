@@ -127,6 +127,8 @@ Then open .env and paste your key:
 
 Open http://localhost:8501 in your browser.
 
+### Step 7 - Add your API key on the left sidebar
+
 ---
 
 ## Features
