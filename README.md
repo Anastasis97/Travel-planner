@@ -96,7 +96,7 @@ The profile resets when the conversation is cleared.
 
 ### Step 2 — Clone the repository
 
-    git clone https://github.com/YOUR_USERNAME/travel-planner.git
+    git clone https://github.com/Anastasis97/travel-planner.git
     cd travel-planner
 
 ### Step 3 — Create a virtual environment
