@@ -1,145 +1,45 @@
 # Travel Planner AI
 
-A conversational AI travel assistant built with **Python** and **LangChain**,
-powered by **Groq** (Llama 3.3 70B). The assistant creates personalised
-day-by-day itineraries with real place names and Google Maps links, estimates
-trip budgets with real hotel recommendations, provides weather forecasts,
-and shares destination-specific travel tips — all through structured
-LLM-powered tool calls.
+A conversational AI travel assistant that creates personalised day-by-day
+itineraries with real place names, estimates trip budgets, provides weather
+forecasts, and shares destination-specific travel tips — for any city
+in the world.
 
-The tool functions use an internal AI recommendation engine that generates
-fresh, location-specific results for **any city in the world**, every time.
+Built with Python, LangChain, and Streamlit. Powered by Groq (Llama 3.3).
 
----
-
-## Project Structure
-
-    travel_chatbot/
-        core/
-            __init__.py
-            chatbot.py            # LangChain agent, conversation logic, trip profile
-        tools/
-            __init__.py
-            travel_tools.py       # Four AI-powered tool functions + maps helper
-        interface/
-            __init__.py
-            app.py                # Streamlit web interface with PDF export
-        cli.py                    # Command-line interface
-        requirements.txt
-        .env
-        .gitignore
-        README.md
+**Live demo:** [your-deployed-url.streamlit.app](https://your-deployed-url.streamlit.app)
 
 ---
 
-## Model Used
+## For Users — How to Use the App
 
-**Llama 3.3 70B Versatile** via **Groq** (langchain-groq).
+1. Open the link above in your browser
+2. Click the **Register** tab and create an account (username + password)
+3. Switch to the **Login** tab and sign in
+4. Start chatting! Try something like:
+   - "Plan a 5-day mid-range trip to Rome"
+   - "What is the weather like in Tokyo in April?"
+   - "Estimate budget for 2 people, 7 days in Barcelona"
+5. Click **Export this plan to PDF** to download your itinerary
+6. Expand **Google Maps links** to see clickable map links for every activity
+7. You get **10 messages per day** — the counter resets at midnight
 
-Groq provides a completely free API — no credit card, no billing, no trial period.
-The model is used in two places:
-
-1. **The main agent** — decides which tools to call and formats the final response.
-2. **Inside the tool functions** — a smaller model (Llama 3.1 8B) generates real,
-   location-specific recommendations for any city.
-
----
-
-## Tool Functions
-
-All tools are in tools/travel_tools.py using LangChain's @tool decorator.
-
-| Tool                  | What it does                                         |
-|-----------------------|------------------------------------------------------|
-| generate_itinerary    | Day-by-day plan with real places + Google Maps links  |
-| estimate_budget       | Cost breakdown with a real hotel recommendation       |
-| get_destination_tips  | Currency, transport, safety, food, and etiquette tips |
-| get_weather_summary   | Temperature, rainfall, packing advice for any month   |
-
-Each tool calls the Groq LLM internally to generate location-specific data,
-then returns structured JSON that the main agent formats for the user.
-
-### Google Maps Integration
-
-The generate_itinerary tool includes Google Maps search URLs for every activity.
-A helper function `make_google_maps_link(query)` URL-encodes the place name
-and returns a clickable Google Maps link. These links are visible in the tool
-call expander in the Streamlit interface.
-
-### Weather Summary
-
-The get_weather_summary tool uses mock climate data for common destination types
-(tropical, mediterranean, temperate, cold, desert) mapped to 50+ cities.
-It returns temperature ranges, rainfall levels, packing advice, and travel
-warnings for any month. No external API needed.
-
----
-
-## Trip Profile Feature
-
-The chatbot maintains a trip profile that automatically updates as the user
-provides preferences (destination, budget, interests, travelers, etc.).
-The profile is shown in the Streamlit sidebar and is reused across tool calls
-so the user does not need to repeat information.
-
-The profile resets when the conversation is cleared.
-
----
-
-## Setup Instructions
-
-### Step 1 — Get a free Groq API key
-
-1. Go to https://console.groq.com
-2. Sign up with Google or email (completely free, no credit card needed)
-3. Go to API Keys, click Create API Key, and copy it
-
-### Step 2 — Clone the repository
-
-    git clone https://github.com/Anastasis97/travel-planner.git
-    cd travel-planner
-
-### Step 3 — Create a virtual environment
-
-    python -m venv .venv
-
-    # Mac / Linux:
-    source .venv/bin/activate
-
-    # Windows:
-    .venv\Scripts\activate
-
-### Step 4 — Install dependencies
-
-    pip install -r requirements.txt
-
-### Step 5 — Add your API key
-
-    Create a .env file
-
-Then open .env and paste your key:
-
-    GROQ_API_KEY=gsk_...your_key_here
-
-### Step 6 — Run the app
-
-    streamlit run interface/app.py
-
-Open http://localhost:8501 in your browser.
-
-### Step 7 - Add your API key on the left sidebar
+No installation, no API keys, no technical knowledge needed. Just open the
+link and start planning your trip.
 
 ---
 
 ## Features
 
-- Real place names for any city in the world (AI-generated, different every time)
-- Google Maps links for every activity in the itinerary
-- Weather forecasts with packing advice for any month
-- Trip profile that remembers your preferences across the conversation
-- PDF export per trip (download button appears after each plan)
-- Tool call inspector (expandable panel showing raw tool inputs/outputs)
-- Quick-start prompt buttons for common requests
+- Day-by-day itineraries with real restaurants, museums, and attractions
+- Google Maps links for every activity
+- Budget estimates with real hotel recommendations
+- Weather forecasts with packing advice
+- Trip profile that remembers your preferences
+- PDF export per trip
+- User authentication (signup/login)
+- Daily usage limit (10 messages per user)
+- Server-side API key (users don't need their own)
 
 ---
 
@@ -167,7 +67,15 @@ Open http://localhost:8501 in your browser.
     - Afternoon: Walk through Monastiraki Flea Market and explore Psiri
     - Evening: Farewell dinner at Spondi in a romantic garden setting
 
-    Budget: $745 total (Hotel Electra Metropolis, Syntagma, $130/night)
+    Budget Estimate (1 person, 3 nights, mid-range):
+      Accommodation:   $390  (Hotel Electra Metropolis, Syntagma)
+      Local transport:  $60
+      Food & dining:   $150
+      Activities:       $90
+      Miscellaneous:    $55
+      TOTAL:           $745
+
+    Would you like destination tips or weather info for Athens?
 
     ---
 
@@ -178,30 +86,118 @@ Open http://localhost:8501 in your browser.
     Assistant:
     April in Athens is excellent! Expect 11-20 C with low rainfall.
     Pack light layers, sunscreen, and comfortable walking shoes.
+    It is one of the best months to visit — warm but not yet crowded.
+
+---
+
+## For Developers — Local Setup
+
+### Step 1 — Get a free Groq API key
+
+1. Go to https://console.groq.com
+2. Sign up (completely free, no credit card)
+3. Create an API Key and copy it
+
+### Step 2 — Clone and install
+
+    git clone https://github.com/YOUR_USERNAME/travel-planner.git
+    cd travel-planner
+    python -m venv .venv
+    source .venv/bin/activate   # Windows: .venv\Scripts\activate
+    pip install -r requirements.txt
+
+### Step 3 — Configure your API key
+
+Create the secrets file:
+
+    mkdir -p .streamlit
+    echo 'GROQ_API_KEY = "gsk_...your_key"' > .streamlit/secrets.toml
+
+Or use a .env file:
+
+    echo 'GROQ_API_KEY=gsk_...your_key' > .env
+
+### Step 4 — Run locally
+
+    streamlit run interface/app.py
+
+Open http://localhost:8501, register an account, and start chatting.
+
+---
+
+## Project Structure
+
+    travel_chatbot/
+        .streamlit/
+            secrets.toml          # API key (gitignored)
+        core/
+            __init__.py
+            chatbot.py            # LangChain agent + trip profile
+        tools/
+            __init__.py
+            travel_tools.py       # Four AI-powered tool functions
+        interface/
+            __init__.py
+            app.py                # Streamlit UI + auth + rate limiting
+        config.yaml               # User credentials (auto-created)
+        usage.db                  # Usage tracking (auto-created, gitignored)
+        cli.py                    # Command-line interface
+        requirements.txt
+        .gitignore
+        README.md
+
+---
+
+## Tool Functions
+
+| Tool                  | What it does                                         |
+|-----------------------|------------------------------------------------------|
+| generate_itinerary    | Day-by-day plan with real places + Google Maps links  |
+| estimate_budget       | Cost breakdown with real hotel recommendation         |
+| get_destination_tips  | Currency, transport, safety, food, etiquette tips     |
+| get_weather_summary   | Temperature, rainfall, packing advice for any month   |
+
+---
+
+## Model Used
+
+**Llama 3.3 70B Versatile** (main agent) and **Llama 3.1 8B Instant**
+(internal tool recommendations), both via Groq's free API.
+
+---
+
+## Deploy to Streamlit Community Cloud
+
+1. Push your code to GitHub
+2. Go to https://share.streamlit.io and sign in with GitHub
+3. Click New app, select your repo
+4. Set main file path to: interface/app.py
+5. In Advanced settings > Secrets, paste:
+       GROQ_API_KEY = "gsk_...your_actual_key"
+6. Click Deploy
+7. Share the URL with anyone
 
 ---
 
 ## Architecture
 
-    User message
+    User (browser)
+        |
+        v
+    Streamlit Cloud (app.py)
+        |--- Authentication (streamlit-authenticator)
+        |--- Rate limiting (SQLite, 10 msgs/day)
         |
         v
     LangChain Agent (Llama 3.3 via Groq)
         |--- decides which tools to call
-        |--- remembers trip profile
         v
     Tool Functions (travel_tools.py)
-        |--- each tool calls Groq LLM internally (Llama 3.1 8B)
-        |--- generates real places, hotels, tips for ANY city
-        |--- adds Google Maps links
+        |--- internal LLM calls (Llama 3.1 8B)
         |--- returns structured JSON
         v
-    Agent formats the JSON into a friendly response
-        |
+    Agent formats response
+        |--- Google Maps links
+        |--- PDF export
         v
-    Streamlit UI / CLI displays the result
-        |--- PDF export per trip
-        |--- Trip profile in sidebar
-        |--- Map links in tool expander
-
----
+    User sees the itinerary

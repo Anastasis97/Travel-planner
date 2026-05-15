@@ -4,3 +4,5 @@ __pycache__/
 *.pyc
 .idea/
 *.egg-info/
+.streamlit/secrets.toml
+usage.db

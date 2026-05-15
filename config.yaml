@@ -1,0 +1,6 @@
+credentials:
+  usernames: {}
+cookie:
+  name: travel_planner_auth
+  key: travel_planner_secret_key_change_me
+  expiry_days: 30

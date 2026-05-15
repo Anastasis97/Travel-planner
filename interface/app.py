@@ -10,6 +10,8 @@ import os
 import sys
 import io
 import re
+import sqlite3
+from datetime import date
 
 # Make sure the project root is on sys.path when run from the interface/ directory
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -20,8 +22,97 @@ try:
 except ImportError:
     pass
 
+import yaml
 import streamlit as st
+import streamlit_authenticator as stauth
 from core.chatbot import TravelPlannerChatbot
+
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+DAILY_MESSAGE_LIMIT = 10
+DB_PATH = os.path.join(os.path.dirname(__file__), "..", "usage.db")
+CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
+
+
+# ---------------------------------------------------------------------------
+# Usage tracking (SQLite)
+# ---------------------------------------------------------------------------
+
+def _init_db():
+    """Create the usage table if it does not exist."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS usage "
+        "(username TEXT, date TEXT, message_count INTEGER, "
+        "PRIMARY KEY(username, date))"
+    )
+    conn.commit()
+    conn.close()
+
+def _get_usage(username: str) -> int:
+    """Return how many messages the user has sent today."""
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute(
+        "SELECT message_count FROM usage WHERE username = ? AND date = ?",
+        (username, date.today().isoformat()),
+    ).fetchone()
+    conn.close()
+    return row[0] if row else 0
+
+def _increment_usage(username: str) -> int:
+    """Add 1 to today's count and return the new total."""
+    conn = sqlite3.connect(DB_PATH)
+    today = date.today().isoformat()
+    row = conn.execute(
+        "SELECT message_count FROM usage WHERE username = ? AND date = ?",
+        (username, today),
+    ).fetchone()
+    if row:
+        new_count = row[0] + 1
+        conn.execute(
+            "UPDATE usage SET message_count = ? WHERE username = ? AND date = ?",
+            (new_count, username, today),
+        )
+    else:
+        new_count = 1
+        conn.execute(
+            "INSERT INTO usage (username, date, message_count) VALUES (?, ?, ?)",
+            (username, today, new_count),
+        )
+    conn.commit()
+    conn.close()
+    return new_count
+
+_init_db()
+
+
+# ---------------------------------------------------------------------------
+# Authentication helpers
+# ---------------------------------------------------------------------------
+
+def _load_config() -> dict:
+    """Load or create the auth config file."""
+    if os.path.exists(CONFIG_PATH):
+        with open(CONFIG_PATH) as f:
+            return yaml.safe_load(f)
+    config = {
+        "credentials": {"usernames": {}},
+        "cookie": {
+            "name": "travel_planner_auth",
+            "key": "travel_planner_secret_key_change_me",
+            "expiry_days": 30,
+        },
+    }
+    _save_config(config)
+    return config
+
+def _save_config(config: dict):
+    """Write config back to YAML."""
+    with open(CONFIG_PATH, "w") as f:
+        yaml.dump(config, f, default_flow_style=False)
 
 
 # ---------------------------------------------------------------------------
@@ -370,9 +461,12 @@ section[data-testid="stSidebar"] code {
 # ---------------------------------------------------------------------------
 
 def _get_bot() -> TravelPlannerChatbot:
-    """Lazy-initialise the chatbot and cache it in session state."""
+    """Lazy-initialise the chatbot using server-side API key."""
     if "bot" not in st.session_state:
-        api_key = st.session_state.get("api_key") or os.environ.get("GROQ_API_KEY", "")
+        # Try st.secrets first (Streamlit Cloud), then env var (local dev)
+        api_key = st.secrets.get("GROQ_API_KEY", "") if hasattr(st, "secrets") else ""
+        if not api_key:
+            api_key = os.environ.get("GROQ_API_KEY", "")
         if not api_key:
             return None  # type: ignore
         st.session_state["bot"] = TravelPlannerChatbot(api_key=api_key)
@@ -392,14 +486,19 @@ with st.sidebar:
     st.markdown("*Powered by Groq (Llama 3.3) + LangChain*")
     st.divider()
 
-    api_key_input = st.text_input(
-        "Groq API Key",
-        value=os.environ.get("GROQ_API_KEY", ""),
-        type="password",
-        help="Your key is only stored in this browser session.",
-    )
-    if api_key_input:
-        st.session_state["api_key"] = api_key_input
+    api_key_input = None  # API key is now server-side
+
+    # Show logged-in user info
+    if st.session_state.get("authentication_status"):
+        username = st.session_state.get("username", "")
+        st.markdown(f"👤 Logged in as: **{username}**")
+        used = _get_usage(username)
+        remaining = max(0, DAILY_MESSAGE_LIMIT - used)
+        st.markdown(f"💬 Messages today: **{used}/{DAILY_MESSAGE_LIMIT}**")
+        st.progress(min(used / DAILY_MESSAGE_LIMIT, 1.0))
+        if remaining == 0:
+            st.warning("Daily limit reached. Come back tomorrow!")
+        st.divider()
 
     st.divider()
     st.markdown("### 🛠 Available Tools")
@@ -417,7 +516,7 @@ with st.sidebar:
 
     # Trip profile display
     bot = _get_bot()
-    if bot:
+    if bot and hasattr(bot, "get_profile"):
         profile = bot.get_profile()
         if profile:
             st.divider()
@@ -444,6 +543,54 @@ with st.sidebar:
         if "bot" in st.session_state:
             st.session_state["bot"].reset()
         st.rerun()
+
+
+# ---------------------------------------------------------------------------
+# Authentication gate
+# ---------------------------------------------------------------------------
+
+config = _load_config()
+
+authenticator = stauth.Authenticate(
+    config["credentials"],
+    config["cookie"]["name"],
+    config["cookie"]["key"],
+    config["cookie"]["expiry_days"],
+)
+
+# Show login or register
+if not st.session_state.get("authentication_status"):
+    st.markdown("""
+    <div class="hero">
+      <h1>✈ Travel Planner AI</h1>
+      <p>Your AI-powered travel assistant — plan trips to any city in the world!</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    tab_login, tab_register = st.tabs(["Login", "Register"])
+
+    with tab_login:
+        authenticator.login(location="main")
+        if st.session_state.get("authentication_status") is False:
+            st.error("Incorrect username or password.")
+
+    with tab_register:
+        try:
+            email, username, name = authenticator.register_user(
+                location="main", pre_authorization=False
+            )
+            if email:
+                _save_config(config)
+                st.success("Account created! Switch to the Login tab to sign in.")
+        except Exception as e:
+            st.error(str(e))
+
+    st.stop()  # Do not show the rest of the app
+
+# If we get here, the user is authenticated
+# Add logout button at the bottom of sidebar
+with st.sidebar:
+    authenticator.logout("🚪 Logout", location="main")
 
 
 # ---------------------------------------------------------------------------
@@ -582,9 +729,16 @@ def _handle_message(message: str) -> None:
     if not message.strip():
         return
 
+    # Check daily usage limit
+    username = st.session_state.get("username", "anonymous")
+    used = _get_usage(username)
+    if used >= DAILY_MESSAGE_LIMIT:
+        st.warning(f"You've used all {DAILY_MESSAGE_LIMIT} messages for today. Come back tomorrow!")
+        return
+
     bot = _get_bot()
     if bot is None:
-        st.error("Please enter your Groq API Key in the sidebar to get started.")
+        st.error("API key not configured. Please contact the admin.")
         return
 
     st.session_state["messages"].append({"role": "user", "content": message})
@@ -592,6 +746,7 @@ def _handle_message(message: str) -> None:
     with st.spinner("Planning your trip… ✈"):
         try:
             reply, tool_calls = bot.chat(message)
+            _increment_usage(username)  # Count this message
         except Exception as exc:
             reply = f"Sorry, something went wrong: {exc}"
             tool_calls = []
