@@ -7,7 +7,7 @@ in the world.
 
 Built with Python, LangChain, and Streamlit. Powered by Groq (Llama 3.3).
 
-**Live demo:** [your-deployed-url.streamlit.app](https://your-deployed-url.streamlit.app)
+**Live demo:** https://travel-planner-t5ogxfvvkurteqcmmqvuro.streamlit.app/
 
 ---
 
