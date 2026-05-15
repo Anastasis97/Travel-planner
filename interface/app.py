@@ -577,7 +577,7 @@ if not st.session_state.get("authentication_status"):
     with tab_register:
         try:
             email, username, name = authenticator.register_user(
-                location="main", pre_authorized=False
+                location="main", pre_authorized=[]
             )
             if email:
                 _save_config(config)
