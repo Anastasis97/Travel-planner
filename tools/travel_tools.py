@@ -66,12 +66,21 @@ def _extract_place_name(activity_text: str) -> str:
 # ---------------------------------------------------------------------------
 
 def _ask_llm(prompt: str) -> str | None:
-    """Call Groq via langchain_groq to generate location-specific data."""
+    """Call Groq via langchain_groq to generate location-specific data.
+    Tries st.secrets first (Streamlit Cloud), then env var (local dev)."""
     try:
         from langchain_groq import ChatGroq
         from langchain_core.messages import HumanMessage, SystemMessage
 
-        api_key = os.environ.get("GROQ_API_KEY", "")
+        # Try Streamlit secrets first, then env var
+        api_key = ""
+        try:
+            import streamlit as st
+            api_key = st.secrets.get("GROQ_API_KEY", "")
+        except Exception:
+            pass
+        if not api_key:
+            api_key = os.environ.get("GROQ_API_KEY", "")
         if not api_key:
             return None
 
@@ -79,7 +88,7 @@ def _ask_llm(prompt: str) -> str | None:
             model="llama-3.1-8b-instant",
             groq_api_key=api_key,
             temperature=0.9,
-            max_tokens=1500,
+            max_tokens=3000,
         )
 
         messages = [
@@ -102,32 +111,80 @@ def _ask_llm(prompt: str) -> str | None:
 
 
 def _generate_itinerary_via_llm(destination, duration_days, budget_level, interests):
-    """Ask LLM to generate a full itinerary with real place names — mixed activities per day."""
+    """Ask LLM to generate a rich itinerary with multiple suggestions per slot."""
     interests_str = ", ".join(interests)
-    prompt = f"""Create a {duration_days}-day travel itinerary for {destination}, {budget_level} budget.
+    prompt = f"""Create a detailed {duration_days}-day travel itinerary for {destination}, {budget_level} budget.
 Traveler interests: {interests_str}.
 
 Return ONLY this JSON structure:
-{{"days": [
-  {{"day": 1, "theme": "Explore & Taste",
-    "morning": "[CULTURAL/SIGHTSEEING activity] at [REAL PLACE NAME] - [brief description]",
-    "afternoon": "[FOOD activity] at [REAL RESTAURANT/MARKET] - try the [REAL DISH]. Then [LEISURE activity] at [REAL PLACE]",
-    "evening": "[DINNER/NIGHTLIFE] at [REAL VENUE] - [brief description]"
-  }}
-]}}
+{{
+  "intro": "3-5 sentence paragraph about why {destination} is great for this trip, the vibe, how to split the days geographically, and a key practical tip (transport, best areas, etc.)",
+  "days": [
+    {{
+      "day": 1,
+      "theme": "Area Name & Creative Title",
+      "morning": {{
+        "description": "What to do and see in the morning (2-3 sentences)",
+        "places": ["Real Place 1", "Real Place 2", "Real Place 3"],
+        "tip": "One practical tip like 'arrive early' or 'wear comfortable shoes'"
+      }},
+      "lunch": {{
+        "restaurants": [
+          {{"name": "Real Restaurant Name", "dish": "specific dish to order"}},
+          {{"name": "Another Restaurant", "dish": "their signature dish"}}
+        ]
+      }},
+      "afternoon": {{
+        "description": "What to do in the afternoon (2-3 sentences)",
+        "places": ["Real Place 1", "Real Place 2"]
+      }},
+      "evening": {{
+        "description": "Dinner and nightlife suggestions",
+        "restaurants": [
+          {{"name": "Dinner Restaurant", "dish": "what to order"}}
+        ],
+        "activities": ["Bar/nightlife/sunset spot suggestion"]
+      }}
+    }}
+  ],
+  "hotels": [
+    {{"name": "Real Hotel Name", "price_range": "€XX-XX/night", "area": "neighbourhood name"}},
+    {{"name": "Another Hotel", "price_range": "€XX-XX/night", "area": "area"}},
+    {{"name": "Third Option", "price_range": "€XX-XX/night", "area": "area"}}
+  ],
+  "budget": {{
+    "currency": "EUR",
+    "hotel_range": "€XX-XX/night",
+    "food_range": "€XX-XX/day",
+    "transport_range": "€XX-XX/day",
+    "activities_range": "€XX-XX/day",
+    "drinks_extras_range": "€XX-XX/day",
+    "total_solo": "€XXX-XXX",
+    "total_couple": "€XXX-XXX"
+  }},
+  "best_areas": [
+    {{"name": "Area Name", "best_for": "reason"}},
+    {{"name": "Area 2", "best_for": "reason"}}
+  ],
+  "must_try_foods": [
+    {{"name": "Dish Name", "description": "brief description"}},
+    {{"name": "Another Dish", "description": "what it is"}},
+    {{"name": "Third Dish", "description": "why try it"}},
+    {{"name": "Fourth Dish", "description": "what makes it special"}},
+    {{"name": "Fifth Dish", "description": "local favourite"}}
+  ],
+  "food_culture_note": "One sentence about the destination's food culture."
+}}
 
-CRITICAL — EVERY DAY MUST MIX DIFFERENT TYPES OF ACTIVITIES:
-- Morning: sightseeing, museum, historic site, or outdoor activity
-- Afternoon: food experience (real restaurant + dish name) COMBINED with a walk, park, or neighbourhood exploration
-- Evening: dinner at a real restaurant (name + dish) OR a fun activity (theatre, rooftop bar, live music, night tour)
-
-STRICT RULES:
-- NEVER make a full day only about food or only about culture. Every day must have a MIX.
-- Every place, restaurant, bar, museum MUST be real and existing in {destination}.
-- Name specific dishes at restaurants (e.g. "try the cacio e pepe" not just "try Italian food").
-- Include variety across days: museums, historic sites, food markets, parks, viewpoints, theatres, cooking classes, boat tours, sports, nightlife.
-- Make each day COMPLETELY different. Never repeat a place.
-- Descriptions should be specific enough to Google."""
+RULES:
+- Every place, restaurant, hotel MUST be real and existing in {destination}.
+- Name SPECIFIC dishes (e.g. "sardines from Kalloni" not "local fish").
+- Give 2-3 restaurant options per meal so users can choose.
+- Give 2-3 places to visit per time slot.
+- Each day should cover a DIFFERENT area or neighbourhood.
+- Include beaches, viewpoints, markets, museums, walks — variety is key.
+- Prices should be realistic for {destination} at {budget_level} level.
+- Use local currency."""
 
     text = _ask_llm(prompt)
     if not text:
@@ -243,52 +300,35 @@ def generate_itinerary(
     llm_data = _generate_itinerary_via_llm(destination, duration_days, budget_level, interests)
 
     if llm_data and "days" in llm_data and len(llm_data["days"]) > 0:
-        # Enrich each day with Google Maps links using short place names
-        for day in llm_data["days"]:
-            for slot in ("morning", "afternoon", "evening"):
-                text = day.get(slot, "")
-                short_name = _extract_place_name(text)
-                day[f"{slot}_map_url"] = make_google_maps_link(f"{short_name} {destination}")
-                day[f"{slot}_place"] = short_name
+        # Pass through all the rich data from the LLM
         result = {
             "destination": destination,
-            "destination_map_url": make_google_maps_link(destination),
             "duration_days": duration_days,
             "budget_level": budget_level,
             "source": "AI-generated with real place recommendations",
-            "itinerary": llm_data["days"],
         }
+        # Include all sections the LLM returned
+        for key in ("intro", "days", "hotels", "budget", "best_areas", "must_try_foods", "food_culture_note"):
+            if key in llm_data:
+                result[key] = llm_data[key]
+        # Ensure itinerary key exists for backward compatibility
+        if "days" in llm_data:
+            result["itinerary"] = llm_data["days"]
     else:
         # Fallback
-        generic_themes = {
-            "cultural": {"morning": "historical museum or archaeological site", "afternoon": "old town walking tour", "evening": "local cultural show or performance"},
-            "food": {"morning": "traditional breakfast cafe", "afternoon": "food market or cooking class", "evening": "highly-rated local restaurant"},
-            "outdoor": {"morning": "scenic hike or viewpoint", "afternoon": "main park or waterfront", "evening": "sunset walk or boat trip"},
-            "relaxation": {"morning": "spa or wellness centre", "afternoon": "shopping and cafe hopping", "evening": "rooftop bar with views"},
-        }
-        days = []
-        for day in range(1, duration_days + 1):
-            cat = interests[(day - 1) % len(interests)]
-            g = generic_themes.get(cat, generic_themes["cultural"])
-            morning_text = f"Visit the best {g['morning']} in {destination}"
-            afternoon_text = f"Explore a {g['afternoon']} in {destination}"
-            evening_text = f"Enjoy a {g['evening']} in {destination}"
-            days.append({
-                "day": day,
-                "theme": cat.capitalize(),
-                "morning": morning_text,
-                "afternoon": afternoon_text,
-                "evening": evening_text,
-                "morning_map_url": make_google_maps_link(f"{morning_text} {destination}"),
-                "afternoon_map_url": make_google_maps_link(f"{afternoon_text} {destination}"),
-                "evening_map_url": make_google_maps_link(f"{evening_text} {destination}"),
-            })
         result = {
             "destination": destination,
             "duration_days": duration_days,
             "budget_level": budget_level,
             "source": "Fallback — AI engine was unavailable. The assistant will enrich these with real places.",
-            "itinerary": days,
+            "itinerary": [
+                {"day": d, "theme": interests[(d-1) % len(interests)].capitalize(),
+                 "morning": {"description": f"Explore the main sights of {destination}.", "places": [f"Top attraction in {destination}"]},
+                 "lunch": {"restaurants": [{"name": f"Local restaurant in {destination}", "dish": "local speciality"}]},
+                 "afternoon": {"description": f"Walk around the old town of {destination}.", "places": [f"Historic district of {destination}"]},
+                 "evening": {"description": f"Dinner and evening walk in {destination}.", "restaurants": [{"name": f"Popular dinner spot in {destination}", "dish": "chef's recommendation"}]}}
+                for d in range(1, duration_days + 1)
+            ],
         }
 
     return json.dumps(result, indent=2)
