@@ -32,7 +32,7 @@ from core.chatbot import TravelPlannerChatbot
 # Constants
 # ---------------------------------------------------------------------------
 
-DAILY_MESSAGE_LIMIT = 10
+DAILY_MESSAGE_LIMIT = 20
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "usage.db")
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
 
@@ -577,7 +577,7 @@ if not st.session_state.get("authentication_status"):
     with tab_register:
         try:
             email, username, name = authenticator.register_user(
-                location="main"
+                location="main", pre_authorization=False
             )
             if email:
                 _save_config(config)
@@ -650,25 +650,12 @@ with chat_placeholder:
         if msg["role"] == "user":
             st.markdown(f'<div class="user-msg">🧑 {msg["content"]}</div>', unsafe_allow_html=True)
         else:
-            # Render assistant message as proper markdown so headers/bullets work
+            # Render assistant message as proper markdown
+            # Google Maps links are embedded directly in the text as [Name](url)
             st.markdown("✈ " + msg["content"])
 
-            # Google Maps links — extracted from the agent's actual response
+            # Tool call raw data expander
             if msg.get("tool_calls"):
-                map_links = _extract_maps_from_response(msg["content"])
-                if map_links:
-                    dest = map_links.get("destination", "Trip")
-                    with st.expander(f"📍 Google Maps links for {dest}", expanded=False):
-                        from urllib.parse import quote_plus
-                        st.markdown(f"🌍 **[View {dest} on Google Maps](https://www.google.com/maps/search/{quote_plus(dest)})**")
-                        st.markdown("---")
-                        for day_info in map_links.get("days", []):
-                            st.markdown(f"**{day_info['title']}**")
-                            for slot_name, place, url in day_info["links"]:
-                                st.markdown(f"&nbsp;&nbsp;{slot_name}: [{place}]({url})")
-                            st.markdown("")
-
-                # Raw tool data expander
                 with st.expander(f"⚙ {len(msg['tool_calls'])} tool call(s) — raw data", expanded=False):
                     for tc in msg["tool_calls"]:
                         st.markdown(f"**Tool:** `{tc['tool']}`")
