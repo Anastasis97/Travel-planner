@@ -32,7 +32,7 @@ from core.chatbot import TravelPlannerChatbot
 # Constants
 # ---------------------------------------------------------------------------
 
-DAILY_MESSAGE_LIMIT = 20
+DAILY_MESSAGE_LIMIT = 10
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "usage.db")
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
 
@@ -577,8 +577,7 @@ if not st.session_state.get("authentication_status"):
     with tab_register:
         try:
             email, username, name = authenticator.register_user(
-                location="main", pre_authorization=False
-            )
+                location="main",)
             if email:
                 _save_config(config)
                 st.success("Account created! Switch to the Login tab to sign in.")
