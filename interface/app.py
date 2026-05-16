@@ -577,8 +577,7 @@ if not st.session_state.get("authentication_status"):
     with tab_register:
         try:
             email, username, name = authenticator.register_user(
-                location="main", pre_authorized=False
-            )
+                location="main")
             if email:
                 _save_config(config)
                 st.success("Account created! Switch to the Login tab to sign in.")
