@@ -274,8 +274,8 @@ def generate_itinerary(
     interests: list[str] | None = None,
 ) -> str:
     """
-    Generate a day-by-day travel itinerary with real places for ANY destination worldwide.
-    Uses an AI recommendation engine to name specific restaurants, museums, and attractions.
+    Validate trip parameters and trigger the assistant to generate a rich itinerary.
+    The assistant will use its own knowledge to create a detailed plan with real places.
 
     Args:
         destination: City to visit (e.g. "Athens", "Tokyo", "Lisbon", "Seoul").
@@ -284,7 +284,8 @@ def generate_itinerary(
         interests: Optional list from: 'cultural', 'outdoor', 'food', 'relaxation'.
 
     Returns:
-        A JSON string with a day-by-day itinerary featuring real place names.
+        A JSON string with validated parameters. The assistant must generate the full
+        rich itinerary with real places, Maps links, budget, must-try foods, and hotels.
     """
     duration_days = max(1, min(30, duration_days))
     budget_level = budget_level.lower().strip()
@@ -296,40 +297,25 @@ def generate_itinerary(
     if not interests:
         interests = ["cultural", "food"]
 
-    # Try LLM for fresh, real, randomised recommendations
-    llm_data = _generate_itinerary_via_llm(destination, duration_days, budget_level, interests)
-
-    if llm_data and "days" in llm_data and len(llm_data["days"]) > 0:
-        # Pass through all the rich data from the LLM
-        result = {
-            "destination": destination,
-            "duration_days": duration_days,
-            "budget_level": budget_level,
-            "source": "AI-generated with real place recommendations",
-        }
-        # Include all sections the LLM returned
-        for key in ("intro", "days", "hotels", "budget", "best_areas", "must_try_foods", "food_culture_note"):
-            if key in llm_data:
-                result[key] = llm_data[key]
-        # Ensure itinerary key exists for backward compatibility
-        if "days" in llm_data:
-            result["itinerary"] = llm_data["days"]
-    else:
-        # Fallback
-        result = {
-            "destination": destination,
-            "duration_days": duration_days,
-            "budget_level": budget_level,
-            "source": "Fallback — AI engine was unavailable. The assistant will enrich these with real places.",
-            "itinerary": [
-                {"day": d, "theme": interests[(d-1) % len(interests)].capitalize(),
-                 "morning": {"description": f"Explore the main sights of {destination}.", "places": [f"Top attraction in {destination}"]},
-                 "lunch": {"restaurants": [{"name": f"Local restaurant in {destination}", "dish": "local speciality"}]},
-                 "afternoon": {"description": f"Walk around the old town of {destination}.", "places": [f"Historic district of {destination}"]},
-                 "evening": {"description": f"Dinner and evening walk in {destination}.", "restaurants": [{"name": f"Popular dinner spot in {destination}", "dish": "chef's recommendation"}]}}
-                for d in range(1, duration_days + 1)
-            ],
-        }
+    result = {
+        "destination": destination,
+        "duration_days": duration_days,
+        "budget_level": budget_level,
+        "interests": interests,
+        "instruction": (
+            f"Generate a COMPLETE rich travel guide for {duration_days} days in {destination} "
+            f"on a {budget_level} budget. You MUST include ALL of the following sections "
+            f"using REAL places you know in {destination}: "
+            f"1) Intro paragraph about the destination, "
+            f"2) Day-by-day itinerary with Morning/Lunch/Afternoon/Evening headings, "
+            f"multiple place suggestions per slot with Google Maps links, "
+            f"3) Budget table with cost ranges, "
+            f"4) Best areas to stay, "
+            f"5) Must-try local foods, "
+            f"6) Hotel suggestions with Maps links. "
+            f"Follow the EXACT format from your system instructions."
+        ),
+    }
 
     return json.dumps(result, indent=2)
 
@@ -364,34 +350,20 @@ def estimate_budget(
         budget_level = "mid-range"
 
     transport_info = TRANSPORT_MODES[budget_level]
-    llm_data = _generate_budget_via_llm(destination, duration_days, budget_level, travelers)
 
-    if llm_data and "recommended_hotel" in llm_data:
-        hotel = llm_data["recommended_hotel"]
-        daily = llm_data.get("daily_costs", {})
-        food_daily = daily.get("food", 50)
-        activities_daily = daily.get("activities", 30)
-        transport_daily = daily.get("local_transport", transport_info["daily_cost"])
-        transport_mode = llm_data.get("transport_mode", transport_info["mode"])
-        tip = llm_data.get("tips", "")
-    else:
-        fallback = {
-            "budget":    {"name": f"Central Hostel {destination}", "rating": 3.9, "price_per_night": 30, "area": "City Centre"},
-            "mid-range": {"name": f"Comfort Hotel {destination}", "rating": 4.2, "price_per_night": 110, "area": "City Centre"},
-            "luxury":    {"name": f"Grand Hotel {destination}",   "rating": 4.7, "price_per_night": 380, "area": "City Centre"},
-        }
-        hotel = fallback[budget_level]
-        food_daily = {"budget": 25, "mid-range": 60, "luxury": 160}[budget_level]
-        activities_daily = {"budget": 12, "mid-range": 35, "luxury": 90}[budget_level]
-        transport_daily = transport_info["daily_cost"]
-        transport_mode = transport_info["mode"]
-        tip = ""
+    # Use realistic defaults per budget level — the main agent will enrich with real hotel names
+    defaults = {
+        "budget":    {"price": 30, "food": 25, "activities": 12},
+        "mid-range": {"price": 110, "food": 55, "activities": 35},
+        "luxury":    {"price": 380, "food": 160, "activities": 90},
+    }
+    d = defaults[budget_level]
 
     rooms = max(1, (travelers + 1) // 2)
-    accommodation = hotel.get("price_per_night", 100) * duration_days * rooms
-    transport_local = transport_daily * duration_days * travelers
-    food = food_daily * duration_days * travelers
-    activities = activities_daily * duration_days * travelers
+    accommodation = d["price"] * duration_days * rooms
+    transport_local = transport_info["daily_cost"] * duration_days * travelers
+    food = d["food"] * duration_days * travelers
+    activities = d["activities"] * duration_days * travelers
     misc = round((accommodation + transport_local + food + activities) * 0.08)
     total = accommodation + transport_local + food + activities + misc
 
@@ -400,20 +372,22 @@ def estimate_budget(
         "duration_days": duration_days,
         "travelers": travelers,
         "budget_level": budget_level,
-        "recommended_hotel": hotel,
-        "transport_mode": transport_mode,
-        "cost_breakdown_usd": {
+        "transport_mode": transport_info["mode"],
+        "cost_breakdown": {
             "accommodation": accommodation,
             "local_transport": transport_local,
             "food_and_dining": food,
-            "activities_and_entrance_fees": activities,
+            "activities": activities,
             "miscellaneous": misc,
         },
-        "total_estimated_usd": total,
-        "per_person_usd": round(total / travelers),
+        "total_estimated": total,
+        "per_person": round(total / travelers),
+        "instruction": (
+            f"Present this budget for {destination} using LOCAL CURRENCY. "
+            f"Suggest 3 REAL hotels with Google Maps links appropriate for {budget_level} budget. "
+            f"Present as a clean table with cost ranges, not exact numbers."
+        ),
     }
-    if tip:
-        result["money_saving_tip"] = tip
     return json.dumps(result, indent=2)
 
 
@@ -487,47 +461,30 @@ def get_packing_list(
 @tool
 def get_destination_tips(destination: str) -> str:
     """
-    Get real, specific travel tips for ANY destination: currency, transport,
-    language, safety, food, and etiquette.
+    Trigger the assistant to provide real, specific travel tips for a destination.
 
     Args:
         destination: The travel destination.
 
     Returns:
-        A JSON string with destination-specific travel tips.
+        A JSON string. The assistant must generate specific tips using its own knowledge.
     """
-    llm_data = _generate_tips_via_llm(destination)
-
-    if llm_data and "currency" in llm_data:
-        result = {
-            "destination": destination,
-            "source": "AI-generated destination-specific tips",
-            **llm_data,
-            "general_tips": [
-                "Keep digital copies of your passport.",
-                "Get travel insurance before departure.",
-                "Tell your bank about your travel dates.",
-                "Download offline maps before you go.",
-            ],
-        }
-    else:
-        result = {
-            "destination": destination,
-            "source": "Generic tips (AI unavailable)",
-            "currency": f"Research local currency for {destination} before travelling.",
-            "language": f"Learn a few local phrases for {destination}.",
-            "transport": "Research public transport options in advance.",
-            "best_time_to_visit": "Check seasonal weather patterns.",
-            "safety": "Check your government travel advisory.",
-            "food_tip": f"Ask locals for restaurant recommendations in {destination}.",
-            "etiquette": "Research local customs and tipping norms.",
-            "general_tips": [
-                "Keep digital copies of your passport.",
-                "Get travel insurance before departure.",
-                "Tell your bank about your travel dates.",
-                "Download offline maps before you go.",
-            ],
-        }
+    result = {
+        "destination": destination,
+        "instruction": (
+            f"Provide SPECIFIC travel tips for {destination} covering: "
+            f"currency (name, ATMs, cards), language (what's spoken, 3 useful phrases), "
+            f"transport (how to get around, apps to use), best time to visit, "
+            f"safety tips, food recommendations (specific dishes and restaurants), "
+            f"and local etiquette. Use YOUR knowledge — be specific, not generic."
+        ),
+        "general_tips": [
+            "Keep digital copies of your passport.",
+            "Get travel insurance before departure.",
+            "Tell your bank about your travel dates.",
+            "Download offline maps before you go.",
+        ],
+    }
     return json.dumps(result, indent=2)
 
 
