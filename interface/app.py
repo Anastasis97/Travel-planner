@@ -571,20 +571,33 @@ if not st.session_state.get("authentication_status"):
     tab_login, tab_register = st.tabs(["Login", "Register"])
 
     with tab_login:
+        # login() also checks the browser re-authentication cookie, so a
+        # returning user is logged back in automatically without a password.
         authenticator.login(location="main")
         if st.session_state.get("authentication_status") is False:
-            st.error("Incorrect username or password.")
+            st.error("Incorrect email or password.")
 
     with tab_register:
         try:
+            # streamlit-authenticator >= 0.4:
+            #  - pre_authorized takes a LIST of emails; omit it to let anyone register
+            #  - merge_username_email=True uses the email as the username,
+            #    so users sign in with their email address
             email, username, name = authenticator.register_user(
-                location="main", pre_authorized=False
+                location="main",
+                merge_username_email=True,
+                captcha=False,
             )
             if email:
                 _save_config(config)
-                st.success("Account created! Switch to the Login tab to sign in.")
+                st.success("Account created! You can now sign in with your email.")
         except Exception as e:
             st.error(str(e))
+
+    # If the login form OR the cookie just authenticated the user,
+    # rerun immediately so the app renders instead of the login screen.
+    if st.session_state.get("authentication_status"):
+        st.rerun()
 
     st.stop()  # Do not show the rest of the app
 
