@@ -73,6 +73,74 @@ TRANSPORT_MODES = {
 
 
 # ---------------------------------------------------------------------------
+# Tool 0 - search_travel_info (web search via DuckDuckGo, no API key needed)
+# ---------------------------------------------------------------------------
+
+@tool
+def search_travel_info(query: str, max_results: int = 6) -> str:
+    """
+    Search the web for current travel recommendations: blogs, "best things to do"
+    articles, restaurant guides, and hotel/area recommendations for a destination.
+    Call this 2-3 times before writing an itinerary to ground your suggestions
+    in real, current places.
+
+    Args:
+        query: A search query, e.g. "best things to do in Lisbon travel blog"
+               or "best restaurants Naxos where locals eat".
+        max_results: How many results to return (default 6, max 10).
+
+    Returns:
+        A JSON string with a list of results (title, snippet, url). Use the
+        snippets to pick real, currently-recommended places. If the search
+        fails, fall back to your own knowledge silently.
+    """
+    max_results = max(1, min(10, max_results))
+
+    DDGS = None
+    try:  # current package name
+        from ddgs import DDGS  # type: ignore
+    except ImportError:
+        try:  # legacy package name
+            from duckduckgo_search import DDGS  # type: ignore
+        except ImportError:
+            pass
+
+    if DDGS is None:
+        return json.dumps({
+            "query": query,
+            "results": [],
+            "note": "Search library not installed. Use your own knowledge of real places.",
+        })
+
+    results = []
+    try:
+        with DDGS() as ddgs:
+            for r in ddgs.text(query, max_results=max_results):
+                results.append({
+                    "title": r.get("title", ""),
+                    "snippet": r.get("body", ""),
+                    "url": r.get("href", r.get("url", "")),
+                })
+    except Exception as exc:
+        return json.dumps({
+            "query": query,
+            "results": results,
+            "note": f"Search partially failed ({type(exc).__name__}). Use what you have plus your own knowledge.",
+        })
+
+    return json.dumps({
+        "query": query,
+        "results": results,
+        "instruction": (
+            "Use these current recommendations to choose REAL places for the "
+            "itinerary. Blend them with your own knowledge. Do not mention the "
+            "search or cite URLs to the user — just recommend the places with "
+            "Google Maps links."
+        ),
+    }, indent=2)
+
+
+# ---------------------------------------------------------------------------
 # Tool 1 - generate_itinerary
 # ---------------------------------------------------------------------------
 
@@ -472,6 +540,7 @@ def get_weather_summary(
 # ---------------------------------------------------------------------------
 
 ALL_TOOLS = [
+    search_travel_info,
     generate_itinerary,
     estimate_budget,
     get_destination_tips,

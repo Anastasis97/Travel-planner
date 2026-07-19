@@ -32,7 +32,7 @@ from core.chatbot import TravelPlannerChatbot
 # Constants
 # ---------------------------------------------------------------------------
 
-DAILY_MESSAGE_LIMIT = 10
+DAILY_MESSAGE_LIMIT = 20
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "usage.db")
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
 
@@ -483,7 +483,7 @@ if "messages" not in st.session_state:
 
 with st.sidebar:
     st.markdown("## ✈ Travel Planner AI")
-    st.markdown("*Powered by Groq (Llama 3.3) + LangChain*")
+    st.markdown("*Powered by Groq (GPT-OSS 120B) + LangChain*")
     st.divider()
 
     api_key_input = None  # API key is now server-side
@@ -503,6 +503,7 @@ with st.sidebar:
     st.divider()
     st.markdown("### 🛠 Available Tools")
     for tool_name, desc in [
+        ("search_travel_info", "Live web search for blog recommendations"),
         ("generate_itinerary", "Day-by-day activity plan"),
         ("estimate_budget", "Full cost breakdown"),
         ("get_destination_tips", "Safety & etiquette tips"),
@@ -577,7 +578,8 @@ if not st.session_state.get("authentication_status"):
     with tab_register:
         try:
             email, username, name = authenticator.register_user(
-                location="main",)
+                location="main", pre_authorization=False
+            )
             if email:
                 _save_config(config)
                 st.success("Account created! Switch to the Login tab to sign in.")

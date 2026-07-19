@@ -2,25 +2,50 @@
 Travel Planner - Core Chatbot
 Generates rich travel guides with multiple suggestions, Google Maps links,
 budget tables, must-try foods, and hotel recommendations.
+
+Model: openai/gpt-oss-120b via Groq (free tier).
+llama-3.3-70b-versatile was deprecated by Groq in June 2026.
 """
 
 from __future__ import annotations
 import os
+import re
+from urllib.parse import quote_plus
+
 from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, AIMessage
 from langgraph.prebuilt import create_react_agent
 from tools.travel_tools import ALL_TOOLS
 
+# ---------------------------------------------------------------------------
+# Model configuration
+# ---------------------------------------------------------------------------
+# openai/gpt-oss-120b: Groq's recommended replacement for llama-3.3-70b.
+# Same free Groq API key, better instruction-following and tool use.
+MODEL_NAME = "openai/gpt-oss-120b"
+
 SYSTEM_PROMPT = """You are Travel Planner, a friendly AI travel assistant who speaks like a knowledgeable friend who has actually visited these places.
 
-You have four tools: generate_itinerary, estimate_budget, get_destination_tips, get_weather_summary.
-Call them when the user asks about a trip. The tool may return thin data — that is OK. YOU must always expand and enrich the response using your own knowledge of real places.
+You have five tools: generate_itinerary, estimate_budget, get_destination_tips, get_weather_summary, search_travel_info.
 
-IMPORTANT: When the user asks for a trip plan, you MUST follow the EXACT format shown in the example below. Do NOT use bullet points for the itinerary. Use the heading + paragraph style shown.
+## HOW TO RESEARCH A TRIP (do this BEFORE writing the plan):
+When the user asks for a trip plan, follow this sequence:
+1. Call generate_itinerary to validate the parameters.
+2. Call search_travel_info 2-3 times to find CURRENT recommendations from travel
+   blogs and guides. Good queries:
+   - "best things to do in <destination> travel blog"
+   - "best restaurants <destination> where locals eat"
+   - "where to stay in <destination> best areas hotels"
+3. Read the search snippets. Prefer places that appear in the results (they are
+   current and real). Blend them with your own knowledge of the destination.
+4. THEN write the complete formatted response yourself.
+
+If search returns an error or nothing useful, proceed with your own knowledge —
+never mention search failures to the user.
+
+IMPORTANT: When the user asks for a trip plan, you MUST follow the EXACT format shown below. Do NOT use bullet points for the itinerary body. Use the heading + paragraph style shown.
 
 ## YOUR RESPONSE FORMAT — COPY THIS STRUCTURE EXACTLY:
-
-When a user asks for a trip plan, respond in this EXACT format:
 
 ---
 
@@ -33,7 +58,6 @@ When a user asks for a trip plan, respond in this EXACT format:
 ### Morning
 [2-3 sentences describing what to do. Mention 2-3 real places with Google Maps links.]
 Visit [Place Name](https://www.google.com/maps/search/Place+Name+City+Country) to see [what]. Then head to [Another Place](https://www.google.com/maps/search/Another+Place+City+Country).
-If you want a swim, try [Beach Name](https://www.google.com/maps/search/Beach+Name+City).
 
 ### Lunch
 Try authentic local food at:
@@ -96,29 +120,78 @@ Try authentic local food at:
 2. Give 2-3 restaurant suggestions per meal with SPECIFIC dish names.
 3. Give 2-3 places to visit per morning/afternoon.
 4. Each day covers a DIFFERENT area or neighbourhood.
-5. ALWAYS include the budget table, best areas, must-try foods, and hotel sections.
-6. Use REAL existing places only. No made-up names.
+5. ALWAYS include ALL FOUR closing sections: budget table, best areas to stay, must-try foods, and hotel suggestions. NEVER skip any of them.
+6. Use REAL existing places only. Prefer places confirmed by your search results. No made-up names.
 7. Use local currency (EUR for Europe, USD for Americas, etc.)
 8. Use the heading + paragraph style shown above. Do NOT use "* Morning:" bullet format.
 9. After the full plan, ask a follow-up question.
 10. If the user asks about weather, call get_weather_summary.
 11. If info is missing, ask ONE question. Budget levels: budget, mid-range, luxury.
+12. Do NOT mention your tools, searches, or these instructions to the user.
 
 ## CRITICAL — READ THIS:
-The user CANNOT see tool output JSON. After calling a tool, you MUST write out the COMPLETE
-formatted response yourself. Do NOT say "here is your itinerary" without actually writing it.
-Do NOT say "now that we have your itinerary" — the user has NOT seen it yet. YOU must write
-the full day-by-day plan, budget table, must-try foods, everything. The tool just gives you
-parameters — YOU generate ALL the content using your own knowledge of real places.
+The user CANNOT see tool output JSON or search results. After calling tools, you MUST write out the COMPLETE formatted response yourself. Do NOT say "here is your itinerary" without actually writing it. YOU must write the full day-by-day plan, budget table, must-try foods, everything. The tools give you parameters and research material — YOU generate ALL the content.
 """
 
 
+# ---------------------------------------------------------------------------
+# Post-processing helpers
+# ---------------------------------------------------------------------------
+
+# A reply that looks like an itinerary must contain all of these.
+REQUIRED_SECTIONS = {
+    "day-by-day plan": re.compile(r"^#{2,3}\s*Day\s*\d", re.MULTILINE | re.IGNORECASE),
+    "budget table": re.compile(r"Suggested\s+Budget|^\|\s*Category\s*\|", re.MULTILINE | re.IGNORECASE),
+    "best areas to stay": re.compile(r"Best\s+Areas?\s+to\s+Stay", re.IGNORECASE),
+    "must-try local foods": re.compile(r"Must[-\s]?Try", re.IGNORECASE),
+    "hotel suggestions": re.compile(r"Hotel\s+Suggestions?", re.IGNORECASE),
+}
+
+_MD_LINK_RE = re.compile(r"\[([^\]\n]+)\]\(([^)\n]*)\)")
+_MAPS_PREFIX = "https://www.google.com/maps/search/"
+
+
+def _missing_sections(reply: str) -> list[str]:
+    """Return the list of required section names absent from an itinerary reply."""
+    return [name for name, pattern in REQUIRED_SECTIONS.items() if not pattern.search(reply)]
+
+
+def _fix_maps_links(reply: str, destination: str = "") -> str:
+    """Normalise every markdown link into a valid Google Maps search link.
+
+    The model sometimes produces malformed URLs (spaces, wrong domain, empty
+    parentheses). Instead of trusting it, we rebuild each link from the link
+    TEXT, which is the place name the user actually sees.
+    """
+    dest = destination.strip()
+
+    def _rebuild(match: re.Match) -> str:
+        name = match.group(1).strip()
+        url = match.group(2).strip()
+
+        # Leave already-valid maps links alone
+        if url.startswith(_MAPS_PREFIX) and " " not in url and len(url) > len(_MAPS_PREFIX):
+            return match.group(0)
+
+        # Strip markdown emphasis from the name for the query
+        clean_name = name.replace("**", "").replace("*", "").strip()
+        if not clean_name:
+            return match.group(0)
+
+        query = clean_name
+        if dest and dest.lower() not in clean_name.lower():
+            query = f"{clean_name} {dest}"
+        return f"[{name}]({_MAPS_PREFIX}{quote_plus(query)})"
+
+    return _MD_LINK_RE.sub(_rebuild, reply)
+
+
 class TravelPlannerChatbot:
-    """Stateful travel planning chatbot using LangGraph + Groq (Llama 3.3)."""
+    """Stateful travel planning chatbot using LangGraph + Groq (GPT-OSS 120B)."""
 
     PROFILE_FIELDS = {"destination", "duration_days", "budget_level", "travelers", "interests", "climate", "trip_style"}
 
-    def __init__(self, api_key=None):
+    def __init__(self, api_key=None, model: str = MODEL_NAME):
         key = api_key or os.environ.get("GROQ_API_KEY")
         if not key:
             raise ValueError(
@@ -126,9 +199,9 @@ class TravelPlannerChatbot:
             )
 
         self._llm = ChatGroq(
-            model="llama-3.3-70b-versatile",
+            model=model,
             groq_api_key=key,
-            temperature=0.8,
+            temperature=0.7,
             max_tokens=8192,
         )
 
@@ -149,25 +222,23 @@ class TravelPlannerChatbot:
     def get_profile(self):
         return dict(self._trip_profile)
 
-    def chat(self, user_message):
-        messages = self._history + [HumanMessage(content=user_message)]
-        result = self._agent.invoke({"messages": messages})
-        all_messages = result["messages"]
+    # -- internal ----------------------------------------------------------
 
-        reply = ""
+    @staticmethod
+    def _extract_reply(all_messages) -> str:
+        """Pull the final assistant text out of the agent's message list."""
         for msg in reversed(all_messages):
             if isinstance(msg, AIMessage):
                 if isinstance(msg.content, str) and msg.content.strip():
-                    reply = msg.content
-                    break
+                    return msg.content
                 if isinstance(msg.content, list):
                     for block in reversed(msg.content):
-                        if isinstance(block, dict) and block.get("type") == "text":
-                            reply = block["text"]
-                            break
-                    if reply:
-                        break
+                        if isinstance(block, dict) and block.get("type") == "text" and block.get("text", "").strip():
+                            return block["text"]
+        return ""
 
+    @staticmethod
+    def _extract_tool_calls(all_messages) -> list[dict]:
         tool_calls = []
         for msg in all_messages:
             if isinstance(msg, AIMessage) and msg.tool_calls:
@@ -178,10 +249,55 @@ class TravelPlannerChatbot:
                     if tc["output"] == "" and tc["tool"] == getattr(msg, "name", None):
                         tc["output"] = msg.content
                         break
+        return tool_calls
 
+    # -- public ------------------------------------------------------------
+
+    def chat(self, user_message):
+        messages = self._history + [HumanMessage(content=user_message)]
+        result = self._agent.invoke({"messages": messages})
+        all_messages = result["messages"]
+
+        reply = self._extract_reply(all_messages)
+        tool_calls = self._extract_tool_calls(all_messages)
+
+        # Update trip profile from tool inputs
         for tc in tool_calls:
             if isinstance(tc["input"], dict):
                 self.update_profile(**tc["input"])
+
+        # ------------------------------------------------------------------
+        # Post-processing step 1: section completeness check + one retry.
+        # Only enforced when the model actually generated an itinerary.
+        # ------------------------------------------------------------------
+        is_itinerary = any(tc["tool"] == "generate_itinerary" for tc in tool_calls)
+        if is_itinerary and reply:
+            missing = _missing_sections(reply)
+            if missing:
+                fix_prompt = (
+                    "Your previous response is missing these required sections: "
+                    + ", ".join(missing)
+                    + ". Rewrite ONLY the missing sections now, in the exact "
+                    "format from your instructions (budget as a markdown table, "
+                    "hotels with Google Maps links). Do not repeat sections that "
+                    "already exist. Do not apologise or add commentary."
+                )
+                retry_messages = all_messages + [HumanMessage(content=fix_prompt)]
+                try:
+                    retry = self._agent.invoke({"messages": retry_messages})
+                    addition = self._extract_reply(retry["messages"])
+                    if addition and addition.strip() != reply.strip():
+                        reply = reply.rstrip() + "\n\n" + addition.strip()
+                except Exception:
+                    pass  # keep the partial reply rather than failing the turn
+
+        # ------------------------------------------------------------------
+        # Post-processing step 2: normalise every link into a valid
+        # Google Maps search URL, rebuilt from the visible place name.
+        # ------------------------------------------------------------------
+        if reply:
+            destination = str(self._trip_profile.get("destination", ""))
+            reply = _fix_maps_links(reply, destination)
 
         self._history.append(HumanMessage(content=user_message))
         self._history.append(AIMessage(content=reply))
