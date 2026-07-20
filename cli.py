@@ -39,7 +39,7 @@ def _banner() -> None:
 {CYAN}{BOLD}╔══════════════════════════════════════════╗
 ║   ✈  Travel Planner  •  AI Assistant   ║
 ╚══════════════════════════════════════════╝{RESET}
-{GREY}Powered by Gemini (gemini-2.0-flash) via LangChain{RESET}
+{GREY}Powered by Gemini 2.5 Flash + LangChain{RESET}
 Type {YELLOW}"quit"{RESET} or {YELLOW}"exit"{RESET} to end  •  {YELLOW}"reset"{RESET} to start over  •  {YELLOW}"history"{RESET} to review
 """)
 
