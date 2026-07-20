@@ -3,8 +3,9 @@ Travel Planner - Core Chatbot
 Generates rich travel guides with multiple suggestions, Google Maps links,
 budget tables, must-try foods, and hotel recommendations.
 
-Model: openai/gpt-oss-120b via Groq (free tier).
-llama-3.3-70b-versatile was deprecated by Groq in June 2026.
+Model: gemini-2.5-flash via Google AI Studio (free tier: 250K TPM, ~1,500 req/day).
+Replaced Groq (openai/gpt-oss-120b) whose 8K TPM free limit was too small for
+rich itineraries (413 rate_limit_exceeded on 7-day trips).
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ import os
 import re
 from urllib.parse import quote_plus
 
-from langchain_groq import ChatGroq
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, AIMessage
 from langgraph.prebuilt import create_react_agent
 from tools.travel_tools import ALL_TOOLS
@@ -20,9 +21,10 @@ from tools.travel_tools import ALL_TOOLS
 # ---------------------------------------------------------------------------
 # Model configuration
 # ---------------------------------------------------------------------------
-# openai/gpt-oss-120b: Groq's recommended replacement for llama-3.3-70b.
-# Same free Groq API key, better instruction-following and tool use.
-MODEL_NAME = "openai/gpt-oss-120b"
+# gemini-2.5-flash: frontier-quality model with a generous free tier
+# (250,000 tokens/minute vs Groq's 8,000) and excellent instruction-following.
+# Get a free key at https://aistudio.google.com — no credit card required.
+MODEL_NAME = "gemini-2.5-flash"
 
 SYSTEM_PROMPT = """You are Travel Planner, a friendly AI travel assistant who speaks like a knowledgeable friend who has actually visited these places.
 
@@ -187,22 +189,23 @@ def _fix_maps_links(reply: str, destination: str = "") -> str:
 
 
 class TravelPlannerChatbot:
-    """Stateful travel planning chatbot using LangGraph + Groq (GPT-OSS 120B)."""
+    """Stateful travel planning chatbot using LangGraph + Google Gemini 2.5 Flash."""
 
     PROFILE_FIELDS = {"destination", "duration_days", "budget_level", "travelers", "interests", "climate", "trip_style"}
 
     def __init__(self, api_key=None, model: str = MODEL_NAME):
-        key = api_key or os.environ.get("GROQ_API_KEY")
+        key = api_key or os.environ.get("GOOGLE_API_KEY")
         if not key:
             raise ValueError(
-                "Groq API key required. Set GROQ_API_KEY in your .env file or pass api_key=..."
+                "Google API key required. Get a free key at https://aistudio.google.com "
+                "and set GOOGLE_API_KEY in your .env file or pass api_key=..."
             )
 
-        self._llm = ChatGroq(
+        self._llm = ChatGoogleGenerativeAI(
             model=model,
-            groq_api_key=key,
+            google_api_key=key,
             temperature=0.7,
-            max_tokens=8192,
+            max_output_tokens=8192,
         )
 
         self._agent = create_react_agent(

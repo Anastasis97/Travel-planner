@@ -464,9 +464,9 @@ def _get_bot() -> TravelPlannerChatbot:
     """Lazy-initialise the chatbot using server-side API key."""
     if "bot" not in st.session_state:
         # Try st.secrets first (Streamlit Cloud), then env var (local dev)
-        api_key = st.secrets.get("GROQ_API_KEY", "") if hasattr(st, "secrets") else ""
+        api_key = st.secrets.get("GOOGLE_API_KEY", "") if hasattr(st, "secrets") else ""
         if not api_key:
-            api_key = os.environ.get("GROQ_API_KEY", "")
+            api_key = os.environ.get("GOOGLE_API_KEY", "")
         if not api_key:
             return None  # type: ignore
         st.session_state["bot"] = TravelPlannerChatbot(api_key=api_key)
@@ -483,7 +483,7 @@ if "messages" not in st.session_state:
 
 with st.sidebar:
     st.markdown("## ✈ Travel Planner AI")
-    st.markdown("*Powered by Groq (GPT-OSS 120B) + LangChain*")
+    st.markdown("*Powered by Google Gemini 2.5 Flash + LangChain*")
     st.divider()
 
     api_key_input = None  # API key is now server-side
