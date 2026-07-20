@@ -4,7 +4,7 @@ A conversational AI travel assistant that creates rich, personalised day-by-day
 itineraries with multiple real place suggestions, Google Maps links, budget
 estimates, must-try foods, and hotel recommendations — for any city in the world.
 
-Built with Python, LangChain, and Streamlit. Powered by Google Gemini 2.5 Flash,
+Built with Python, LangChain, and Streamlit. Powered by Google Gemini 3.5 Flash,
 with live DuckDuckGo web search for current recommendations.
 
 **Live demo:** https://travel-planner-t5ogxfvvkurteqcmmqvuro.streamlit.app/
@@ -181,8 +181,14 @@ seafood, olive oil, and meze culture.
 4. Click **Create API key**, pick or auto-create a Google Cloud project,
    and copy the key (starts with `AIza...`)
 
-Free tier: 250,000 tokens/minute and ~1,500 requests/day on Gemini 2.5 Flash —
-roughly 30x the throughput of Groq's free tier, which this app previously used.
+Free tier: 15 requests/minute and ~1,500 requests/day on Gemini 3.5 Flash,
+with a 1M-token context window — far beyond Groq's 8K tokens/minute free tier,
+which this app previously used.
+
+Note: Google retires older Flash models for new projects (2.5 Flash returned
+404 NOT_FOUND for projects created after mid-2026). If that happens again, set
+the `GEMINI_MODEL` secret (e.g. `GEMINI_MODEL = "gemini-4-flash"`) — no code
+change needed.
 
 ### Step 2 — Clone and install
 
@@ -241,7 +247,7 @@ roughly 30x the throughput of Groq's free tier, which this app previously used.
     Streamlit Cloud (app.py)
         |--- Authentication + Rate limiting
         v
-    LangChain Agent (Gemini 2.5 Flash via Google AI Studio)
+    LangChain Agent (Gemini 3.5 Flash via Google AI Studio)
         |--- Calls search_travel_info (DuckDuckGo) 2-3 times
         |    to find current blog/guide recommendations
         |--- Writes the rich response with Maps links,

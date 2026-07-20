@@ -3,9 +3,9 @@ Travel Planner - Core Chatbot
 Generates rich travel guides with multiple suggestions, Google Maps links,
 budget tables, must-try foods, and hotel recommendations.
 
-Model: gemini-2.5-flash via Google AI Studio (free tier: 250K TPM, ~1,500 req/day).
-Replaced Groq (openai/gpt-oss-120b) whose 8K TPM free limit was too small for
-rich itineraries (413 rate_limit_exceeded on 7-day trips).
+Model: gemini-3.5-flash via Google AI Studio (free tier: 15 RPM, ~1,500 req/day,
+1M context). gemini-2.5-flash was retired for newly created projects in 2026.
+Override the model without code changes via the GEMINI_MODEL secret/env var.
 """
 
 from __future__ import annotations
@@ -21,10 +21,12 @@ from tools.travel_tools import ALL_TOOLS
 # ---------------------------------------------------------------------------
 # Model configuration
 # ---------------------------------------------------------------------------
-# gemini-2.5-flash: frontier-quality model with a generous free tier
-# (250,000 tokens/minute vs Groq's 8,000) and excellent instruction-following.
+# gemini-3.5-flash: Google's current free-tier Flash model (launched May 2026).
+# Older Flash models (2.5, 3.0) are being retired for new projects, so the
+# model is overridable via the GEMINI_MODEL env var / Streamlit secret —
+# if Google retires this one too, update the secret instead of the code.
 # Get a free key at https://aistudio.google.com — no credit card required.
-MODEL_NAME = "gemini-2.5-flash"
+MODEL_NAME = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
 
 SYSTEM_PROMPT = """You are Travel Planner, a friendly AI travel assistant who speaks like a knowledgeable friend who has actually visited these places.
 
@@ -189,7 +191,7 @@ def _fix_maps_links(reply: str, destination: str = "") -> str:
 
 
 class TravelPlannerChatbot:
-    """Stateful travel planning chatbot using LangGraph + Google Gemini 2.5 Flash."""
+    """Stateful travel planning chatbot using LangGraph + Google Gemini Flash."""
 
     PROFILE_FIELDS = {"destination", "duration_days", "budget_level", "travelers", "interests", "climate", "trip_style"}
 
