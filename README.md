@@ -4,17 +4,19 @@ A conversational AI travel assistant that creates rich, personalised day-by-day
 itineraries with multiple real place suggestions, Google Maps links, budget
 estimates, must-try foods, and hotel recommendations — for any city in the world.
 
-Built with Python, LangChain, and Streamlit. Powered by Groq (Llama 3.3).
+Built with Python, LangChain, and Streamlit. Powered by Google Gemini 2.5 Flash,
+with live DuckDuckGo web search for current recommendations.
 
-**Live demo:** https://travel-planner-t5ogxfvvkurteqcmmqvuro.streamlit.app/
+**Live demo:** [your-deployed-url.streamlit.app](https://your-deployed-url.streamlit.app)
 
 ---
 
 ## For Users — How to Use the App
 
 1. Open the link above in your browser
-2. Click the **Register** tab and create an account
-3. Switch to the **Login** tab and sign in
+2. Click the **Register** tab and create an account (your email is your username)
+3. Switch to the **Login** tab and sign in with your email — you stay signed in
+   for 30 days on the same browser (password-less re-authentication cookie)
 4. Start chatting! Try something like:
    - "Plan a 3-day trip to Lesvos island in Greece on a medium budget"
    - "Create a 5-day mid-range trip to Rome with lots of food and culture"
@@ -27,6 +29,8 @@ Built with Python, LangChain, and Streamlit. Powered by Groq (Llama 3.3).
 
 ## Features
 
+- **Live web search** — the agent searches travel blogs and guides before writing
+  the plan, so suggestions are real and current
 - Rich itineraries with **intro paragraph**, day-by-day plan, multiple suggestions per time slot
 - **Google Maps links** on every place, restaurant, hotel, and attraction
 - **Multiple restaurant options** per meal with specific dishes to order
@@ -37,7 +41,12 @@ Built with Python, LangChain, and Streamlit. Powered by Groq (Llama 3.3).
 - Weather forecasts with packing advice
 - Trip profile that remembers preferences
 - PDF export per trip
-- User authentication and daily usage limits
+- **Guaranteed complete responses** — a post-processing step checks that every
+  itinerary includes the budget table, best areas, must-try foods, and hotels,
+  and asks the model to fill in anything missing
+- **Self-healing Google Maps links** — every link is validated and rebuilt from
+  the place name after generation, so malformed URLs never reach the user
+- User authentication (sign in with email, 30-day remember-me cookie) and daily usage limits
 
 ---
 
@@ -163,11 +172,17 @@ seafood, olive oil, and meze culture.
 
 ## For Developers — Local Setup
 
-### Step 1 — Get a free Groq API key
+### Step 1 — Get a free Google AI Studio (Gemini) API key
 
-1. Go to https://console.groq.com
-2. Sign up (completely free, no credit card)
-3. Create an API Key and copy it
+1. Go to https://aistudio.google.com
+2. Sign in with any Google account (completely free, no credit card)
+3. Click **Get API key** (key icon in the left sidebar, or visit
+   https://aistudio.google.com/apikey directly)
+4. Click **Create API key**, pick or auto-create a Google Cloud project,
+   and copy the key (starts with `AIza...`)
+
+Free tier: 250,000 tokens/minute and ~1,500 requests/day on Gemini 2.5 Flash —
+roughly 30x the throughput of Groq's free tier, which this app previously used.
 
 ### Step 2 — Clone and install
 
@@ -180,7 +195,7 @@ seafood, olive oil, and meze culture.
 ### Step 3 — Configure API key
 
     mkdir -p .streamlit
-    echo 'GROQ_API_KEY = "gsk_...your_key"' > .streamlit/secrets.toml
+    echo 'GOOGLE_API_KEY = "AIza...your_key"' > .streamlit/secrets.toml
 
 ### Step 4 — Run locally
 
@@ -192,7 +207,7 @@ seafood, olive oil, and meze culture.
 
     travel_chatbot/
         .streamlit/
-            secrets.toml          # API key (gitignored)
+            secrets.toml          # GOOGLE_API_KEY (gitignored)
         core/
             chatbot.py            # LangChain agent + system prompt + trip profile
         tools/
@@ -210,6 +225,7 @@ seafood, olive oil, and meze culture.
 
 | Tool                  | What it does                                         |
 |-----------------------|------------------------------------------------------|
+| search_travel_info    | Live DuckDuckGo search of travel blogs & guides       |
 | generate_itinerary    | Rich day-by-day plan with multiple options per slot   |
 | estimate_budget       | Cost breakdown with real hotel recommendation         |
 | get_destination_tips  | Currency, transport, safety, food, etiquette tips     |
@@ -225,15 +241,18 @@ seafood, olive oil, and meze culture.
     Streamlit Cloud (app.py)
         |--- Authentication + Rate limiting
         v
-    LangChain Agent (Llama 3.3 70B via Groq)
-        |--- Formats rich response with Maps links,
+    LangChain Agent (Gemini 2.5 Flash via Google AI Studio)
+        |--- Calls search_travel_info (DuckDuckGo) 2-3 times
+        |    to find current blog/guide recommendations
+        |--- Writes the rich response with Maps links,
         |    budget table, must-try foods, hotel suggestions
         v
-    Tool Functions (travel_tools.py)
-        |--- Internal LLM (Llama 3.1 8B) generates
-        |    multiple real suggestions per time slot
+    Post-processing (chatbot.py)
+        |--- Checks all required sections exist; one auto-retry
+        |    asks the model to append anything missing
+        |--- Rebuilds every Google Maps link from the place name
         v
-    User sees a rich travel guide with clickable links
+    User sees a complete travel guide with clickable links
 
 ---
 
@@ -242,5 +261,6 @@ seafood, olive oil, and meze culture.
 1. Push code to GitHub
 2. Go to https://share.streamlit.io and sign in
 3. New app > select repo > main file: interface/app.py
-4. Advanced settings > Secrets: GROQ_API_KEY = "gsk_..."
+4. Advanced settings > Secrets: GOOGLE_API_KEY = "AIza..."
 5. Deploy and share the URL
+
