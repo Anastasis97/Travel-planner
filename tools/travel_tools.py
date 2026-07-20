@@ -1,6 +1,6 @@
 """
 Travel Planner Tool Functions
-Uses Groq LLM to generate real, location-specific recommendations for ANY city.
+Uses Google AI studio LLM to generate real, location-specific recommendations for ANY city.
 Falls back gracefully if the API call fails.
 """
 
