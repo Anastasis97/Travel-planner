@@ -749,7 +749,18 @@ def _handle_message(message: str) -> None:
             reply, tool_calls = bot.chat(message)
             _increment_usage(username)  # Count this message
         except Exception as exc:
-            reply = f"Sorry, something went wrong: {exc}"
+            err = str(exc)
+            if any(m in err for m in ("503", "UNAVAILABLE", "high demand", "overloaded")):
+                reply = ("The AI model is experiencing high demand right now and "
+                         "didn't respond after several retries. Please try again "
+                         "in a minute — your message wasn't counted against your "
+                         "daily limit.")
+            elif "429" in err or "RESOURCE_EXHAUSTED" in err:
+                reply = ("We've hit the AI provider's rate limit. Please wait a "
+                         "minute and try again — your message wasn't counted "
+                         "against your daily limit.")
+            else:
+                reply = f"Sorry, something went wrong: {exc}"
             tool_calls = []
 
     st.session_state["messages"].append({

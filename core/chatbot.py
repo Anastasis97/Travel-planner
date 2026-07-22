@@ -10,7 +10,9 @@ Override the model without code changes via the GEMINI_MODEL secret/env var.
 
 from __future__ import annotations
 import os
+import random
 import re
+import time
 from urllib.parse import quote_plus
 
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -190,6 +192,32 @@ def _fix_maps_links(reply: str, destination: str = "") -> str:
     return _MD_LINK_RE.sub(_rebuild, reply)
 
 
+# Transient Google API errors worth retrying automatically.
+_TRANSIENT_MARKERS = ("503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED",
+                      "500", "INTERNAL", "DEADLINE_EXCEEDED", "overloaded",
+                      "high demand")
+
+
+def _is_transient(exc: Exception) -> bool:
+    text = str(exc)
+    return any(marker in text for marker in _TRANSIENT_MARKERS)
+
+
+def _invoke_with_retry(agent, payload, attempts: int = 4):
+    """Invoke the agent, retrying transient 503/429/500 errors with
+    exponential backoff + jitter (~2s, 4s, 8s). Re-raises anything else,
+    and the last error if all attempts fail."""
+    delay = 2.0
+    for attempt in range(attempts):
+        try:
+            return agent.invoke(payload)
+        except Exception as exc:
+            if attempt == attempts - 1 or not _is_transient(exc):
+                raise
+            time.sleep(delay + random.uniform(0, 1))
+            delay *= 2
+
+
 class TravelPlannerChatbot:
     """Stateful travel planning chatbot using LangGraph + Google Gemini Flash."""
 
@@ -260,7 +288,7 @@ class TravelPlannerChatbot:
 
     def chat(self, user_message):
         messages = self._history + [HumanMessage(content=user_message)]
-        result = self._agent.invoke({"messages": messages})
+        result = _invoke_with_retry(self._agent, {"messages": messages})
         all_messages = result["messages"]
 
         reply = self._extract_reply(all_messages)
@@ -289,7 +317,7 @@ class TravelPlannerChatbot:
                 )
                 retry_messages = all_messages + [HumanMessage(content=fix_prompt)]
                 try:
-                    retry = self._agent.invoke({"messages": retry_messages})
+                    retry = _invoke_with_retry(self._agent, {"messages": retry_messages}, attempts=2)
                     addition = self._extract_reply(retry["messages"])
                     if addition and addition.strip() != reply.strip():
                         reply = reply.rstrip() + "\n\n" + addition.strip()
