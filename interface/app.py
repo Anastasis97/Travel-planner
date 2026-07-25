@@ -463,13 +463,22 @@ section[data-testid="stSidebar"] code {
 def _get_bot() -> TravelPlannerChatbot:
     """Lazy-initialise the chatbot using server-side API key."""
     if "bot" not in st.session_state:
-        # Try st.secrets first (Streamlit Cloud), then env var (local dev)
-        api_key = st.secrets.get("GOOGLE_API_KEY", "") if hasattr(st, "secrets") else ""
-        if not api_key:
-            api_key = os.environ.get("GOOGLE_API_KEY", "")
-        if not api_key:
+        # Try st.secrets first (Streamlit Cloud), then env vars (local dev).
+        def _secret(name: str) -> str:
+            try:
+                val = st.secrets.get(name, "")
+            except Exception:
+                val = ""
+            return val or os.environ.get(name, "")
+
+        google_key = _secret("GOOGLE_API_KEY")
+        cerebras_key = _secret("CEREBRAS_API_KEY")
+        if not google_key and not cerebras_key:
             return None  # type: ignore
-        st.session_state["bot"] = TravelPlannerChatbot(api_key=api_key)
+        st.session_state["bot"] = TravelPlannerChatbot(
+            api_key=google_key or None,
+            cerebras_api_key=cerebras_key or None,
+        )
     return st.session_state["bot"]
 
 
@@ -483,7 +492,7 @@ if "messages" not in st.session_state:
 
 with st.sidebar:
     st.markdown("## ✈ Travel Planner AI")
-    st.markdown("*Powered by Google Gemini 3.5 Flash + LangChain*")
+    st.markdown("*Powered by Cerebras / Gemini + LangChain*")
     st.divider()
 
     api_key_input = None  # API key is now server-side
@@ -739,7 +748,7 @@ def _handle_message(message: str) -> None:
 
     bot = _get_bot()
     if bot is None:
-        st.error("API key not configured. Please contact the admin.")
+        st.error("No API key configured (CEREBRAS_API_KEY or GOOGLE_API_KEY). Please contact the admin.")
         return
 
     st.session_state["messages"].append({"role": "user", "content": message})

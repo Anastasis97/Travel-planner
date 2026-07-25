@@ -39,7 +39,7 @@ def _banner() -> None:
 {CYAN}{BOLD}╔══════════════════════════════════════════╗
 ║   ✈  Travel Planner  •  AI Assistant   ║
 ╚══════════════════════════════════════════╝{RESET}
-{GREY}Powered by Gemini 3.5 Flash + LangChain{RESET}
+{GREY}Powered by Cerebras / Gemini + LangChain{RESET}
 Type {YELLOW}"quit"{RESET} or {YELLOW}"exit"{RESET} to end  •  {YELLOW}"reset"{RESET} to start over  •  {YELLOW}"history"{RESET} to review
 """)
 
@@ -76,16 +76,17 @@ def _wrap(text: str, width: int = 88) -> str:
 def main() -> None:
     _banner()
 
-    api_key = os.environ.get("GOOGLE_API_KEY")
-    if not api_key:
-        print(f"{YELLOW}GOOGLE_API_KEY not found in environment.{RESET}")
-        api_key = input("Please enter your Google API key: ").strip()
-        if not api_key:
+    google_key = os.environ.get("GOOGLE_API_KEY")
+    cerebras_key = os.environ.get("CEREBRAS_API_KEY")
+    if not google_key and not cerebras_key:
+        print(f"{YELLOW}No API key found (CEREBRAS_API_KEY or GOOGLE_API_KEY).{RESET}")
+        cerebras_key = input("Please enter your Cerebras API key: ").strip() or None
+        if not cerebras_key:
             print("No API key provided. Exiting.")
             sys.exit(1)
 
     try:
-        bot = TravelPlannerChatbot(api_key=api_key)
+        bot = TravelPlannerChatbot(api_key=google_key, cerebras_api_key=cerebras_key)
     except Exception as exc:
         print(f"Failed to initialise chatbot: {exc}")
         sys.exit(1)

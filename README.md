@@ -4,8 +4,8 @@ A conversational AI travel assistant that creates rich, personalised day-by-day
 itineraries with multiple real place suggestions, Google Maps links, budget
 estimates, must-try foods, and hotel recommendations — for any city in the world.
 
-Built with Python, LangChain, and Streamlit. Powered by Google Gemini 3.5 Flash,
-with live DuckDuckGo web search for current recommendations.
+Built with Python, LangChain, and Streamlit. Powered by Cerebras (gpt-oss-120b)
+with Google Gemini as fallback, plus live DuckDuckGo web search.
 
 **Live demo:** https://travel-planner-t5ogxfvvkurteqcmmqvuro.streamlit.app/
 
@@ -172,7 +172,23 @@ seafood, olive oil, and meze culture.
 
 ## For Developers — Local Setup
 
-### Step 1 — Get a free Google AI Studio (Gemini) API key
+### Step 1 — Get a free API key (Cerebras recommended)
+
+**Option A — Cerebras (recommended: 14,400 requests/day free)**
+
+1. Go to https://cloud.cerebras.ai and sign up (free, no credit card)
+2. Open **API Keys** in the left menu and click **Create API key**
+3. Copy the key (starts with `csk-...`) and set it as `CEREBRAS_API_KEY`
+
+Free tier: ~30 requests/minute, 14,400 requests/day, ~60K tokens/minute,
+1M tokens/day. Default model: `gpt-oss-120b` (override with the
+`CEREBRAS_MODEL` secret).
+
+**Option B — Google AI Studio (Gemini)**
+
+Note: newly created Google projects may receive very low free quotas
+(some get only 5 requests/minute and 20 requests/day — check yours at
+https://ai.dev/rate-limit before relying on it).
 
 1. Go to https://aistudio.google.com
 2. Sign in with any Google account (completely free, no credit card)
@@ -201,7 +217,8 @@ change needed.
 ### Step 3 — Configure API key
 
     mkdir -p .streamlit
-    echo 'GOOGLE_API_KEY = "AIza...your_key"' > .streamlit/secrets.toml
+    echo 'CEREBRAS_API_KEY = "csk-...your_key"' > .streamlit/secrets.toml
+    # or: GOOGLE_API_KEY = "AIza..." — Cerebras is preferred when both are set
 
 ### Step 4 — Run locally
 
@@ -247,7 +264,7 @@ change needed.
     Streamlit Cloud (app.py)
         |--- Authentication + Rate limiting
         v
-    LangChain Agent (Gemini 3.5 Flash via Google AI Studio)
+    LangChain Agent (Cerebras gpt-oss-120b, or Gemini fallback)
         |--- Calls search_travel_info (DuckDuckGo) 2-3 times
         |    to find current blog/guide recommendations
         |--- Writes the rich response with Maps links,
@@ -267,6 +284,5 @@ change needed.
 1. Push code to GitHub
 2. Go to https://share.streamlit.io and sign in
 3. New app > select repo > main file: interface/app.py
-4. Advanced settings > Secrets: GOOGLE_API_KEY = "AIza..."
+4. Advanced settings > Secrets: CEREBRAS_API_KEY = "csk-..." (or GOOGLE_API_KEY)
 5. Deploy and share the URL
-

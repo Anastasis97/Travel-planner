@@ -3,9 +3,13 @@ Travel Planner - Core Chatbot
 Generates rich travel guides with multiple suggestions, Google Maps links,
 budget tables, must-try foods, and hotel recommendations.
 
-Model: gemini-3.5-flash via Google AI Studio (free tier: 15 RPM, ~1,500 req/day,
-1M context). gemini-2.5-flash was retired for newly created projects in 2026.
-Override the model without code changes via the GEMINI_MODEL secret/env var.
+Providers (auto-selected by which API key is configured):
+  1. Cerebras (CEREBRAS_API_KEY set)  — default model gpt-oss-120b.
+     Free tier: ~30 req/min, 14,400 req/day, ~60K tokens/min, no credit card.
+  2. Google Gemini (GOOGLE_API_KEY)   — default model gemini-3.5-flash.
+     Free-tier quotas vary per project; some projects only get 5 RPM / 20 RPD.
+Override models via CEREBRAS_MODEL / GEMINI_MODEL secrets; force a provider
+with MODEL_PROVIDER = "cerebras" or "gemini". No code changes needed.
 """
 
 from __future__ import annotations
@@ -21,14 +25,45 @@ from langgraph.prebuilt import create_react_agent
 from tools.travel_tools import ALL_TOOLS
 
 # ---------------------------------------------------------------------------
-# Model configuration
+# Model / provider configuration (all overridable via secrets, no code changes)
 # ---------------------------------------------------------------------------
-# gemini-3.5-flash: Google's current free-tier Flash model (launched May 2026).
-# Older Flash models (2.5, 3.0) are being retired for new projects, so the
-# model is overridable via the GEMINI_MODEL env var / Streamlit secret —
-# if Google retires this one too, update the secret instead of the code.
-# Get a free key at https://aistudio.google.com — no credit card required.
-MODEL_NAME = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
+CEREBRAS_MODEL = os.environ.get("CEREBRAS_MODEL", "gpt-oss-120b")
+MODEL_PROVIDER = os.environ.get("MODEL_PROVIDER", "").strip().lower()  # optional: "cerebras" | "gemini"
+MODEL_NAME = GEMINI_MODEL  # backward-compat export
+
+
+def _build_llm(google_api_key: str | None, cerebras_api_key: str | None):
+    """Pick the provider: Cerebras when its key is available (much higher free
+    limits), Gemini otherwise. MODEL_PROVIDER forces a specific provider."""
+    google_key = google_api_key or os.environ.get("GOOGLE_API_KEY")
+    cerebras_key = cerebras_api_key or os.environ.get("CEREBRAS_API_KEY")
+
+    use_cerebras = cerebras_key and MODEL_PROVIDER != "gemini"
+    if MODEL_PROVIDER == "cerebras" and not cerebras_key:
+        raise ValueError("MODEL_PROVIDER is 'cerebras' but CEREBRAS_API_KEY is not set.")
+
+    if use_cerebras:
+        from langchain_cerebras import ChatCerebras
+        return ChatCerebras(
+            model=CEREBRAS_MODEL,
+            api_key=cerebras_key,
+            temperature=0.7,
+            max_tokens=8192,
+        ), f"cerebras/{CEREBRAS_MODEL}"
+
+    if not google_key:
+        raise ValueError(
+            "No API key configured. Set CEREBRAS_API_KEY (free key at "
+            "https://cloud.cerebras.ai) or GOOGLE_API_KEY (free key at "
+            "https://aistudio.google.com)."
+        )
+    return ChatGoogleGenerativeAI(
+        model=GEMINI_MODEL,
+        google_api_key=google_key,
+        temperature=0.7,
+        max_output_tokens=8192,
+    ), f"gemini/{GEMINI_MODEL}"
 
 SYSTEM_PROMPT = """You are Travel Planner, a friendly AI travel assistant who speaks like a knowledgeable friend who has actually visited these places.
 
@@ -223,20 +258,9 @@ class TravelPlannerChatbot:
 
     PROFILE_FIELDS = {"destination", "duration_days", "budget_level", "travelers", "interests", "climate", "trip_style"}
 
-    def __init__(self, api_key=None, model: str = MODEL_NAME):
-        key = api_key or os.environ.get("GOOGLE_API_KEY")
-        if not key:
-            raise ValueError(
-                "Google API key required. Get a free key at https://aistudio.google.com "
-                "and set GOOGLE_API_KEY in your .env file or pass api_key=..."
-            )
-
-        self._llm = ChatGoogleGenerativeAI(
-            model=model,
-            google_api_key=key,
-            temperature=0.7,
-            max_output_tokens=8192,
-        )
+    def __init__(self, api_key=None, cerebras_api_key=None, model: str | None = None):
+        # api_key kept for backward compatibility = the Google API key.
+        self._llm, self.active_model = _build_llm(api_key, cerebras_api_key)
 
         self._agent = create_react_agent(
             model=self._llm,
